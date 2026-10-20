@@ -14,7 +14,24 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      qloo_cache: {
+        Row: {
+          cache_key: string
+          created_at: string
+          response: Json
+        }
+        Insert: {
+          cache_key: string
+          created_at?: string
+          response: Json
+        }
+        Update: {
+          cache_key?: string
+          created_at?: string
+          response?: Json
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
