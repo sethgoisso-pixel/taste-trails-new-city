@@ -3,7 +3,7 @@ import { getRequest } from "@tanstack/react-start/server";
 import { z } from "zod";
 import { aiErrorMessage, generatePlainText } from "./ai.server";
 import { qlooGet, QlooError } from "./qloo.server";
-import { normalizeFavorites } from "./taste-rules";
+import { isPlaceInCity, normalizeFavorites, sanitizeTags, verifyAndSanitizePlanText } from "./taste-rules";
 import type { MediaKind, PlaceCategory, QlooCallLog, RecItem, ResolvedEntity, StepResult } from "./taste-types";
 
 const city = z.string().trim().min(2).max(80);
