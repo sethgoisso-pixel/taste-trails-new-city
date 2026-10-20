@@ -20,27 +20,37 @@ interface RawEntity {
   name: string;
   types?: string[];
   subtype?: string;
+  affinity?: number;
+  score?: number;
   tags?: { name?: string; type?: string }[];
   properties?: {
     image?: { url?: string };
     images?: { url?: string }[];
     address?: string;
+    postal_code?: string;
     release_year?: number;
     publication_year?: number;
     website?: string;
+    locality?: {
+      city?: string | null;
+      state?: { name?: string } | null;
+    };
+    localities?: { name?: string }[];
   };
 }
 
 function toItem(e: RawEntity): RecItem {
   const p = e.properties ?? {};
   const year = p.release_year ?? p.publication_year;
+  const rawTags = (e.tags ?? []).map((t) => t.name ?? "").filter(Boolean);
   return {
     id: e.entity_id,
     name: e.name,
-    tags: (e.tags ?? []).map((t) => t.name ?? "").filter(Boolean).slice(0, 8),
+    tags: sanitizeTags(rawTags).slice(0, 8),
     image: p.image?.url ?? p.images?.[0]?.url,
     subtitle: p.address ?? (year ? String(year) : undefined),
     url: p.website ?? undefined,
+    affinity: typeof e.affinity === "number" ? e.affinity : undefined,
   };
 }
 
@@ -70,15 +80,16 @@ export const resolveFavorites = createServerFn({ method: "POST" })
 export const getTasteTags = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => z.object({ ids }).parse(d))
   .handler(async ({ data }): Promise<StepResult<string[]>> => {
-    try {
+        try {
       const { data: res, log } = await qlooGet("/v2/insights", {
         "filter.type": "urn:tag",
         "filter.tag.types": "urn:tag:genre:media,urn:tag:genre:place,urn:tag:keyword:media",
         "signal.interests.entities": data.ids.join(","),
         take: "15",
       });
-      const tags = ((res as { results?: { tags?: { name: string }[] } }).results?.tags ?? []).map((t) => t.name);
-      return { ok: true, value: [...new Set(tags)], calls: [log] };
+      const rawTags = ((res as { results?: { tags?: { name: string }[] } }).results?.tags ?? []).map((t) => t.name);
+      const cleanedTags = sanitizeTags([...new Set(rawTags)]);
+      return { ok: true, value: cleanedTags, calls: [log] };
     } catch (e) {
       return fail(e, []);
     }
@@ -99,9 +110,18 @@ export const getPlaces = createServerFn({ method: "POST" })
         "filter.tags": PLACE_TAGS[data.category],
         "filter.location.query": data.city,
         "signal.interests.entities": data.ids.join(","),
-        take: "4",
+        take: "8",
       });
-      const items = ((res as { results?: { entities?: RawEntity[] } }).results?.entities ?? []).map(toItem);
+      const rawEntities = (res as { results?: { entities?: RawEntity[] } }).results?.entities ?? [];
+      const filteredEntities = rawEntities.filter((e) =>
+        isPlaceInCity(data.city, {
+          address: e.properties?.address,
+          locality: e.properties?.locality?.state?.name ?? e.properties?.locality?.city,
+          localities: (e.properties?.localities ?? []).map((l) => l.name ?? ""),
+          postalCode: e.properties?.postal_code,
+        }),
+      );
+      const items = filteredEntities.slice(0, 4).map(toItem);
       return { ok: true, value: items, calls: [log] };
     } catch (e) {
       return fail(e, []);
@@ -142,11 +162,17 @@ export const writePlan = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => planInput.parse(d))
   .handler(async ({ data }): Promise<{ ok: true; text: string } | { ok: false; error: string }> => {
     try {
+      const allowedEntities = [
+        ...data.favorites,
+        ...Object.values(data.places).flat(),
+        ...Object.values(data.media).flat(),
+      ];
       const text = await generatePlainText(
-        `You write a calm 30-day settling-in plan for someone who moved from ${data.homeCity} to ${data.targetCity}. Use ONLY the places, music, movies and books given in the data. Never invent venues or titles. The data describes what groups of people with similar taste tend to enjoy, so phrase it as "people who like X tend to enjoy Y", never "you will love". ${PLAN_FORMAT}`,
+        `You write a warm, calm 30-day settling-in plan for someone who moved from ${data.homeCity} to ${data.targetCity}. STRICT REQUIREMENT: Cite ONLY places, music, movies, and books from this exact list: ${allowedEntities.join(", ")}. Never invent any other venue or title. You may include 1 or 2 general tips per week, but you must clearly prefix them with "General tip (not from Qloo):". Phrase tendencies as "people who like X tend to enjoy Y", never "you will love". ${PLAN_FORMAT}`,
         JSON.stringify({ favorites: data.favorites, tasteTags: data.tasteTags, places: data.places, media: data.media }),
       );
-      return { ok: true, text };
+      const verifiedText = verifyAndSanitizePlanText(text, allowedEntities);
+      return { ok: true, text: verifiedText };
     } catch (e) {
       console.error(e);
       return { ok: false, error: aiErrorMessage(e) };
