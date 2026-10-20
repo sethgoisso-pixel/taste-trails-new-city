@@ -194,7 +194,10 @@ function Index() {
       }
       const tasteTags = tags.ok ? tags.value : [];
       const valueOf = (r: StepResult<RecItem[]> | undefined): RecItem[] => (r && r.ok ? r.value : []);
-      const places = Object.fromEntries(cats.map((c, i) => [c, valueOf(placeRs[i])])) as Record<PlaceCategory, RecItem[]>;
+      const seen = new Set<string>();
+      const places = Object.fromEntries(
+        cats.map((c, i) => [c, valueOf(placeRs[i]).filter((it) => !seen.has(it.id) && seen.add(it.id))]),
+      ) as Record<PlaceCategory, RecItem[]>;
       const media = Object.fromEntries(kinds.map((k, i) => [k, valueOf(mediaRs[i])])) as Record<MediaKind, RecItem[]>;
       const base: Result = { favorites: names, targetCity: target.trim(), tasteTags, places, media };
       setResult(base);
