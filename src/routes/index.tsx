@@ -30,9 +30,16 @@ import {
   resolveFavorites,
   writePlan,
 } from "@/lib/taste.functions";
-import { DEMO_PRESET, MAX_FAVORITES, normalizeFavorites, whyLine } from "@/lib/taste-rules";
+import {
+  DEMO_PRESET,
+  MAX_FAVORITES,
+  formatResolutionNote,
+  getMatchBadge,
+  normalizeFavorites,
+  sharedTags,
+  whyLine,
+} from "@/lib/taste-rules";
 import type { MediaKind, PlaceCategory, PlanWeek, QlooCallLog, RecItem, StepResult } from "@/lib/taste-types";
-
 const TITLE = "Taste Bridge — carry your taste to a new city";
 const DESC =
   "Moving cities? Taste Bridge uses Qloo cultural taste data to show where people who share your favorites tend to eat, go out and explore in your new city.";
@@ -147,13 +154,16 @@ function Index() {
 
     try {
       update("resolve", { status: "running" });
-      const res = await resolveFn({ data: { favorites: cleaned } });
+            const res = await resolveFn({ data: { favorites: cleaned } });
       if (!res.ok) return stop("resolve", res);
-      const missing = cleaned.filter((f) => !res.value.some((v) => v.query === f));
+      const note = formatResolutionNote(
+        res.value.map((v) => v.query),
+        cleaned,
+      );
       update("resolve", {
         status: "done",
         calls: res.calls,
-        note: `${res.value.length} of ${cleaned.length} resolved${missing.length ? ` (not found: ${missing.join(", ")})` : ""}`,
+        note,
       });
       const ids = res.value.map((v) => v.id);
       const names = res.value.map((v) => v.name);
@@ -523,13 +533,28 @@ function ItemGroup({ label, Icon, items, favorites, tasteTags }: { label: string
         <p className="text-sm">No strong matches found here.</p>
       ) : (
         <ul className="flex flex-col gap-3">
-          {items.map((it) => (
-            <li key={it.id} className="rounded-xl bg-card p-3 text-card-foreground">
-              <p className="font-semibold">{it.name}</p>
-              {it.subtitle && <p className="text-xs text-muted-foreground">{it.subtitle}</p>}
-              <p className="mt-1 text-sm">{whyLine(favorites, it.tags, tasteTags)}</p>
-            </li>
-          ))}
+                    {items.map((it) => {
+            const shared = sharedTags(it.tags, tasteTags);
+            const badge = getMatchBadge(it.affinity, shared.length);
+            return (
+              <li key={it.id} className="rounded-xl bg-card p-3 text-card-foreground">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="font-semibold">{it.name}</p>
+                  <span
+                    className={`inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                      badge.tone === "strong"
+                        ? "border border-primary/20 bg-primary/10 text-primary"
+                        : "border border-border bg-muted text-muted-foreground"
+                    }`}
+                  >
+                    {badge.label}
+                  </span>
+                </div>
+                {it.subtitle && <p className="text-xs text-muted-foreground">{it.subtitle}</p>}
+                <p className="mt-1 text-sm">{whyLine(favorites, it.tags, tasteTags)}</p>
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>
