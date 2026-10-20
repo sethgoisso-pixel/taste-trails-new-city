@@ -21,6 +21,7 @@ export interface RecItem {
   image?: string | undefined;
   subtitle?: string | undefined;
   url?: string | undefined;
+  affinity?: number | undefined;
 }
 
 export type PlaceCategory = "food" | "nightlife" | "culture";
