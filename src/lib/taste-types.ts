@@ -4,7 +4,7 @@ export interface QlooCallLog {
   resultCount: number;
   durationMs: number;
   cached: boolean;
-  error?: string;
+  error?: string | undefined;
 }
 
 export interface ResolvedEntity {
@@ -18,9 +18,9 @@ export interface RecItem {
   id: string;
   name: string;
   tags: string[];
-  image?: string;
-  subtitle?: string;
-  url?: string;
+  image?: string | undefined;
+  subtitle?: string | undefined;
+  url?: string | undefined;
 }
 
 export type PlaceCategory = "food" | "nightlife" | "culture";
