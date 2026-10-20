@@ -1,5 +1,13 @@
 {
   "version": "7",
   "dialect": "postgresql",
-  "entries": []
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1792495410436,
+      "tag": "0000_qloo_cache",
+      "breakpoints": true
+    }
+  ]
 }
