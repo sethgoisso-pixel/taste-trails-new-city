@@ -96,7 +96,7 @@ function parsePlan(text: string): PlanWeek[] {
     .map((l) => l.trim())
     .map((l) => l.match(/^\**\s*(Week\s*\d)\s*[:\-–]\**\s*(.+)$/i))
     .filter((m): m is RegExpMatchArray => !!m)
-    .map((m) => ({ title: m[1].replace(/\s+/, " "), text: m[2] }));
+    .map((m) => ({ title: (m[1] ?? "").replace(/\s+/, " "), text: m[2] ?? "" }));
   return weeks.length ? weeks : [{ title: "Plan", text: text.trim() }];
 }
 
@@ -193,8 +193,9 @@ function Index() {
         return;
       }
       const tasteTags = tags.ok ? tags.value : [];
-      const places = Object.fromEntries(cats.map((c, i) => [c, placeRs[i].ok ? placeRs[i].value : []])) as Record<PlaceCategory, RecItem[]>;
-      const media = Object.fromEntries(kinds.map((k, i) => [k, mediaRs[i].ok ? mediaRs[i].value : []])) as Record<MediaKind, RecItem[]>;
+      const valueOf = (r: StepResult<RecItem[]> | undefined): RecItem[] => (r && r.ok ? r.value : []);
+      const places = Object.fromEntries(cats.map((c, i) => [c, valueOf(placeRs[i])])) as Record<PlaceCategory, RecItem[]>;
+      const media = Object.fromEntries(kinds.map((k, i) => [k, valueOf(mediaRs[i])])) as Record<MediaKind, RecItem[]>;
       const base: Result = { favorites: names, targetCity: target.trim(), tasteTags, places, media };
       setResult(base);
 
