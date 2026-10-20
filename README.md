@@ -19,8 +19,15 @@ A **With Qloo / AI alone** toggle shows what a plain AI answer gives without Qlo
 
 Each step and every Qloo call (endpoint, parameters without the key, result count, duration, cache hit) is shown live in the Agent trace panel.
 
+### Quality and Safeguards
+- **Territorial filtering**: Places are accepted only if their locality or address matches the target city (case/accent-insensitive). For Berlin, postal codes are strictly verified (10115 to 14199, rejecting Potsdam 14467+ and surrounding regions).
+- **Zero hallucinations**: 30-day plan generation enforces that every named venue, artist or title cited belongs to verified Qloo results.
+- **Auditable affinity**: Badges display "Strong match" or "Medium match" derived from Qloo affinity scores or shared taste tags. No fabricated percentages.
+- **Dynamic resolution**: "X of Y resolved" precisely reports resolved items and names any missing favorite.
+
 ### Backend
 - All Qloo calls run on the server (TanStack Start server functions on Lovable Cloud). The `QLOO_API_KEY` secret never reaches the browser.
+
 - Every Qloo response is cached in the database for 24 hours.
 - Retries are limited to 2, only for rate limits and server errors.
 - Errors are shown as clear messages; the page never goes blank.
