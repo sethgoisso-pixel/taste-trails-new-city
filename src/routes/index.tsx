@@ -163,7 +163,7 @@ function Index() {
       const note = [formatResolutionNote(resolved.map((v) => v.query), cleaned), ...sugg].join(" ");
       if (resolved.length < MIN_FAVORITES) {
         update("resolve", { status: "error", calls: res.calls, note });
-        setError(`${MIN_FAVORITES_MESSAGE} ${sugg.join(" ")}`.trim());
+        setError(`Only ${resolved.length} of ${cleaned.length} favorites could be matched; at least ${MIN_FAVORITES} are needed. Fix or remove the others and try again. ${sugg.join(" ")}`.trim());
         setRunning(false);
         return;
       }
@@ -364,7 +364,7 @@ data: {
               <div role="alert" className="flex items-start gap-2 rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-sm text-foreground">
                 <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden />
                 <span>
-                  <strong>Something went wrong.</strong> {error}
+<strong>{/favorites|cities/i.test(error) ? "Check your input." : "Something went wrong."}</strong> {error}
                 </span>
               </div>
             )}
