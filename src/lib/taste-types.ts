@@ -27,7 +27,31 @@ export interface RecItem {
 export type PlaceCategory = "food" | "nightlife" | "culture";
 export type MediaKind = "artist" | "movie" | "book";
 
-export type StepResult<T> = { ok: true; value: T; calls: QlooCallLog[] } | { ok: false; error: string; calls: QlooCallLog[] };
+export interface Exclusion {
+  name: string;
+  reason: string;
+}
+
+export interface StepMeta {
+  rawCount: number;
+  excluded: Exclusion[];
+  /** Kept tags with their URN type, for whitelist auditing. */
+  keptTags?: { name: string; type: string }[];
+  lowSignal?: boolean;
+}
+
+export interface Suggestion {
+  query: string;
+  name: string;
+}
+
+export interface ResolveResult {
+  value: ResolvedEntity[];
+  suggestions: Suggestion[];
+  missing: string[];
+}
+
+export type StepResult<T> = { ok: true; value: T; calls: QlooCallLog[]; meta?: StepMeta } | { ok: false; error: string; calls: QlooCallLog[] };
 
 export interface PlanWeek {
   title: string;
