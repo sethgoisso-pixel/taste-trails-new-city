@@ -369,7 +369,7 @@ export function verifyPlan(
  * "matches your taste for Restaurant" and any audiobook matches any other audiobook.
  */
 const GENERIC_TASTE_RE =
-  /^(restaurants?|bars?|cafes?|pubs?|nightclubs?|night clubs?|clubs?|lounges?|museums?|art galler(y|ies)|galler(y|ies)|theat(er|re)s?|hotels?|resorts?|ski resorts?|stores?|shops?|audiobooks?|ebooks?|paperbacks?|hardcovers?|kindle|books?|movies?|films?|music|songs?|albums?|places?|brands?|fiction|non-?fiction)$/i;
+  /^(restaurants?|bars?|cafes?|pubs?|nightclubs?|night clubs?|clubs?|lounges?|museums?|art galler(y|ies)|galler(y|ies)|theat(er|re)s?|hotels?|resort hotels?|resorts?|ski resorts?|parks?|shopping (malls?|cent(er|re)s?)|malls?|supermarkets?|department stores?|airports?|gyms?|schools?|universit(y|ies)|stadiums?|zoos?|churches|church|mosques?|temples?|romans?|novels?|stores?|shops?|audiobooks?|ebooks?|paperbacks?|hardcovers?|kindle|books?|movies?|films?|music|songs?|albums?|places?|brands?|fiction|non-?fiction)$/i;
 
 export function isGenericTag(tag: string): boolean {
   return GENERIC_TASTE_RE.test(normalizeCityString(tag));
