@@ -72,7 +72,7 @@ export const Route = createFileRoute("/")({
   component: Index,
 });
 
-type StepStatus = "pending" | "running" | "done" | "error";
+type StepStatus = "pending" | "running" | "done" | "warning" | "error";
 interface TraceStep {
   id: string;
   label: string;
@@ -182,22 +182,42 @@ function Index() {
       const kinds: MediaKind[] = ["artist", "movie", "book"];
 
       const tagsP = tagsFn({ data: { ids } }).then((r) => {
-        update("tags", r.ok ? { status: "done", calls: r.calls, note: r.value.slice(0, 6).join(", ") } : { status: "error", calls: r.calls, note: r.error });
+update(
+  "tags",
+  !r.ok
+    ? { status: "error", calls: r.calls, note: r.error }
+    : r.value.length === 0
+      ? { status: "warning", calls: r.calls, note: "No taste tags returned for these favorites. Media results are not tag-filtered." }
+      : { status: "done", calls: r.calls, note: r.value.slice(0, 6).join(", ") },
+);
         return r;
       });
       const placesP = Promise.all(cats.map((category) => placesFn({ data: { ids, city: target.trim(), category } }))).then((rs) => {
         finish("places", rs);
         return rs;
       });
-      const mediaP = Promise.all(kinds.map((kind) => mediaFn({ data: { ids, city: target.trim(), kind } }))).then((rs) => {
-        finish("media", rs);
-        return rs;
-      });
+// Media filtering needs the taste tags, so this call waits for the tags step.
+const mediaP = tagsP
+  .then((t) => {
+    const tasteTagsForMedia = t.ok ? t.value.slice(0, 30).map((x) => x.slice(0, 60)) : [];
+    return Promise.all(kinds.map((kind) => mediaFn({ data: { ids, city: target.trim(), kind, tasteTags: tasteTagsForMedia } })));
+  })
+  .then((rs) => {
+    finish("media", rs);
+    return rs;
+  });
       function finish(id: string, rs: StepResult<RecItem[]>[]) {
         const calls = rs.flatMap((r) => r.calls);
         const failed = rs.find((r): r is Extract<typeof r, { ok: false }> => !r.ok);
         const count = rs.reduce((n, r) => n + (r.ok ? r.value.length : 0), 0);
-        update(id, failed && count === 0 ? { status: "error", calls, note: failed.error } : { status: "done", calls, note: `${count} found${failed ? " (some lookups failed)" : ""}` });
+update(
+  id,
+  failed && count === 0
+    ? { status: "error", calls, note: failed.error }
+    : count === 0
+      ? { status: "warning", calls, note: "0 found: nothing passed the quality, city and taste filters." }
+      : { status: "done", calls, note: `${count} found${failed ? " (some lookups failed)" : ""}` },
+);
       }
 
       const [tags, placeRs, mediaRs] = await Promise.all([tagsP, placesP, mediaP]);
@@ -222,7 +242,15 @@ function Index() {
       update("plan", { status: "running" });
       const pick = (rec: Record<string, RecItem[]>) => Object.fromEntries(Object.entries(rec).map(([k, v]) => [k, v.map((i) => i.name)]));
       const plan = await planFn({
-        data: { homeCity: home.trim(), targetCity: target.trim(), favorites: names, tasteTags: tasteTags.slice(0, 15), places: pick(places), media: pick(media) },
+data: {
+  homeCity: home.trim(),
+  targetCity: target.trim(),
+  favorites: names,
+  tasteTags: tasteTags.slice(0, 15),
+  places: pick(places),
+  media: pick(media),
+  rejected: res.value.suggestions.map((x) => x.name.slice(0, 160)).slice(0, 10),
+},
       });
       if (plan.ok) {
         update("plan", { status: "done", note: "Written by Lovable AI from the Qloo data only" });
@@ -416,11 +444,12 @@ function TabBtn({ active, onClick, children, id, controls }: { active: boolean; 
   );
 }
 
-const STATUS_TEXT: Record<StepStatus, string> = { pending: "Waiting", running: "Running", done: "Done", error: "Failed" };
+const STATUS_TEXT: Record<StepStatus, string> = { pending: "Waiting", running: "Running", done: "Done", warning: "No results", error: "Failed" };
 
 function StatusIcon({ s }: { s: StepStatus }) {
   if (s === "running") return <Loader2 className="size-4 animate-spin text-primary" aria-hidden />;
   if (s === "done") return <Check className="size-4 text-mint-foreground" aria-hidden />;
+  if (s === "warning") return <AlertTriangle className="size-4 text-amber-600 dark:text-amber-400" aria-hidden />;
   if (s === "error") return <AlertTriangle className="size-4 text-destructive" aria-hidden />;
   return <Circle className="size-4 text-muted-foreground" aria-hidden />;
 }
@@ -447,9 +476,11 @@ function AgentTrace({ steps, announce }: { steps: TraceStep[]; announce: string 
                 <span
                   className={`rounded-full px-2 py-0.5 text-xs font-medium ${
                     s.status === "done"
-                      ? "bg-mint text-mint-foreground"
-                      : s.status === "error"
-                        ? "bg-destructive/10 text-destructive"
+? "bg-mint text-mint-foreground"
+: s.status === "warning"
+? "bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200"
+: s.status === "error"
+? "bg-destructive/10 text-destructive"
                         : "bg-muted text-muted-foreground"
                   }`}
                 >
@@ -494,13 +525,23 @@ const MEDIA_META: Record<MediaKind, { label: string; Icon: typeof Wine }> = {
 };
 
 function QlooResult({ r }: { r: Result }) {
+  // One explanation per card, computed over ALL cards so that no two cards share the same sentence.
+  const explainItems = [
+    ...(Object.keys(PLACE_META) as PlaceCategory[]).flatMap((c) =>
+      r.places[c].map((it) => ({ id: it.id, name: it.name, tags: it.tags, group: PLACE_META[c].label })),
+    ),
+    ...(Object.keys(MEDIA_META) as MediaKind[]).flatMap((k) =>
+      r.media[k].map((it) => ({ id: it.id, name: it.name, tags: it.tags, group: MEDIA_META[k].label })),
+    ),
+  ];
+  const explanations = buildExplanations(explainItems, r.tasteTags);
   return (
     <div className="flex flex-col gap-8">
       <div>
         <h3 className="mb-3 text-lg font-semibold">Places</h3>
         <div className="grid gap-4 md:grid-cols-3">
           {(Object.keys(PLACE_META) as PlaceCategory[]).map((c) => (
-            <ItemGroup key={c} {...PLACE_META[c]} items={r.places[c]} favorites={r.favorites} tasteTags={r.tasteTags} />
+<ItemGroup key={c} {...PLACE_META[c]} items={r.places[c]} tasteTags={r.tasteTags} explanations={explanations} />
           ))}
         </div>
       </div>
@@ -508,7 +549,7 @@ function QlooResult({ r }: { r: Result }) {
         <h3 className="mb-3 text-lg font-semibold">Music, movies and books</h3>
         <div className="grid gap-4 md:grid-cols-3">
           {(Object.keys(MEDIA_META) as MediaKind[]).map((k) => (
-            <ItemGroup key={k} {...MEDIA_META[k]} items={r.media[k]} favorites={r.favorites} tasteTags={r.tasteTags} />
+<ItemGroup key={k} {...MEDIA_META[k]} items={r.media[k]} tasteTags={r.tasteTags} explanations={explanations} />
           ))}
         </div>
       </div>
@@ -530,19 +571,20 @@ function QlooResult({ r }: { r: Result }) {
   );
 }
 
-function ItemGroup({ label, Icon, items, favorites, tasteTags }: { label: string; Icon: typeof Wine; items: RecItem[]; favorites: string[]; tasteTags: string[] }) {
+function ItemGroup({ label, Icon, items, tasteTags, explanations }: { label: string; Icon: typeof Wine; items: RecItem[]; tasteTags: string[]; explanations: Record<string, string> }) {
+  const listAffinities = items.map((i) => i.affinity).filter((a): a is number => typeof a === "number");
   return (
     <div className="rounded-2xl border border-mint-border bg-mint p-4 text-mint-foreground">
       <h4 className="mb-3 flex items-center gap-2 font-semibold">
         <Icon className="size-4" aria-hidden /> {label}
       </h4>
       {items.length === 0 ? (
-        <p className="text-sm">No strong matches found here.</p>
+<p className="text-sm">Not enough strong matches here yet. Adding a favorite in this category sharpens the results.</p>
       ) : (
         <ul className="flex flex-col gap-3">
                     {items.map((it) => {
             const shared = sharedTags(it.tags, tasteTags);
-            const badge = getMatchBadge(it.affinity, shared.length);
+const badge = getMatchBadge(it.affinity, shared.length, listAffinities);
             return (
               <li key={it.id} className="rounded-xl bg-card p-3 text-card-foreground">
                 <div className="flex items-center justify-between gap-2">
@@ -558,7 +600,7 @@ function ItemGroup({ label, Icon, items, favorites, tasteTags }: { label: string
                   </span>
                 </div>
                 {it.subtitle && <p className="text-xs text-muted-foreground">{it.subtitle}</p>}
-                <p className="mt-1 text-sm">{whyLine(favorites, it.tags, tasteTags)}</p>
+                <p className="mt-1 text-sm">{explanations[it.id]}</p>
               </li>
             );
           })}
