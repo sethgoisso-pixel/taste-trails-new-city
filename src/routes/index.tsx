@@ -6,6 +6,7 @@ import {
   ArrowRight,
   BookOpen,
   Check,
+  ChevronDown,
   Clapperboard,
   Database,
   Loader2,
@@ -29,9 +30,6 @@ import {
   getTasteTags,
   resolveFavorites,
   writePlan,
-    BookOpen,
-  Check,
-  ChevronDown,
 } from "@/lib/taste.functions";
 import {
   DEMO_PRESET,
