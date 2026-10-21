@@ -50,10 +50,11 @@ const stem = (s: string) => s.toLowerCase().replace(/[^a-z]/g, "").slice(0, 5);
 
 /** Tags a recommended item shares with the taste profile (loose stem match). */
 export function sharedTags(itemTags: readonly string[], tasteTags: readonly string[]): string[] {
-  const taste = new Set(tasteTags.map(stem).filter((s) => s.length >= 4));
+  // Generic tags ("Restaurant", "Audiobook"...) say what something IS, not what someone likes.
+  const taste = new Set(tasteTags.filter((t) => !isGenericTag(t)).map(stem).filter((s) => s.length >= 4));
   const out: string[] = [];
   for (const t of itemTags) {
-    if (taste.has(stem(t)) && !out.includes(t)) out.push(t);
+    if (!isGenericTag(t) && taste.has(stem(t)) && !out.includes(t)) out.push(t);
   }
   return out.slice(0, 3);
 }
@@ -297,12 +298,13 @@ export function buildExplanations(items: readonly ExplainInput[], tasteTags: rea
   for (const it of items) {
     rank[it.group] = (rank[it.group] ?? 0) + 1;
     const shared = sharedTags(it.tags, tasteTags).slice(0, 2);
-    const own = it.tags.filter((t) => !shared.includes(t)).slice(0, 2);
+    const own = it.tags.filter((t) => !shared.includes(t) && !isGenericTag(t)).slice(0, 2);
     const candidates: string[] = [];
     if (shared.length) candidates.push(`Matches your taste for ${shared.join(" and ")}.`);
     if (shared.length && own.length) candidates.push(`Matches your taste for ${shared[0]}, known for ${own[0]}.`);
     if (own.length) candidates.push(`Known for ${own.join(" and ")}.`);
-    if (it.tags.length) candidates.push(`Known for ${it.tags.slice(0, 2).join(" and ")} (${it.group.toLowerCase()}).`);
+    const readable = it.tags.filter((t) => !isGenericTag(t));
+    if (readable.length) candidates.push(`Known for ${readable.slice(0, 2).join(" and ")} (${it.group.toLowerCase()}).`);
     candidates.push(`#${rank[it.group]} in ${it.group} by Qloo taste signal.`);
     let line = candidates.find((c) => !used.has(c));
     if (!line) line = `${it.name}: #${rank[it.group]} in ${it.group} by Qloo taste signal.`;
@@ -358,3 +360,44 @@ export function verifyPlan(
   });
   return { text: lines.join("\n"), removed, weeksWithoutEntity };
 }
+
+// ---------- Generic tags are not taste ----------
+
+/**
+ * Place categories and formats ("Restaurant", "Bar", "Audiobook", "Ski resort", "Fiction") describe WHAT
+ * something is, not what someone likes. They must never count as shared taste, otherwise every restaurant
+ * "matches your taste for Restaurant" and any audiobook matches any other audiobook.
+ */
+const GENERIC_TASTE_RE =
+  /^(restaurants?|bars?|cafes?|pubs?|nightclubs?|night clubs?|clubs?|lounges?|museums?|art galler(y|ies)|galler(y|ies)|theat(er|re)s?|hotels?|resorts?|ski resorts?|stores?|shops?|audiobooks?|ebooks?|paperbacks?|hardcovers?|kindle|books?|movies?|films?|music|songs?|albums?|places?|brands?|fiction|non-?fiction)$/i;
+
+export function isGenericTag(tag: string): boolean {
+  return GENERIC_TASTE_RE.test(normalizeCityString(tag));
+}
+
+export function meaningfulTasteTags(tags: readonly string[]): string[] {
+  return tags.filter((t) => !isGenericTag(t));
+}
+
+// ---------- Place category must match the place's own primary genre ----------
+
+const CATEGORY_TOKENS: Record<string, readonly string[]> = {
+  nightlife: ["bar", "pub", "nightclub", "club", "lounge", "cocktail", "brewery", "wine", "speakeasy", "karaoke", "disco", "music", "dance"],
+  culture: ["museum", "gallery", "theatre", "theater", "cinema", "cultural", "monument", "landmark", "historic", "library", "concert", "opera", "exhibition", "art", "arts"],
+};
+
+/**
+ * A venue can carry a secondary "art gallery" tag and still be a restaurant. For Nightlife and Culture we
+ * therefore check the place's PRIMARY genre. If the genre is missing or in an unknown format, we do not judge.
+ */
+export function categoryMismatchReason(category: string, primaryGenre?: string | null): string | null {
+  const wanted = CATEGORY_TOKENS[category];
+  if (!wanted || !primaryGenre) return null;
+  const prefix = "urn:tag:genre:place:";
+  if (!primaryGenre.startsWith(prefix)) return null;
+  const tokens = primaryGenre.slice(prefix.length).toLowerCase().split(/[_:\-]/);
+  return tokens.some((t) => wanted.includes(t)) ? null : `primary genre is not ${category}`;
+}
+
+/** Alias used by the server functions. */
+export const categoryReason = categoryMismatchReason;
