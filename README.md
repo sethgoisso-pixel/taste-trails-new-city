@@ -1,64 +1,95 @@
 # Taste Bridge
 
-Carry what you love to a new city.
+**Carry what you love to your new city.**
+Built for the Qloo Agentic Hackathon. Live demo: https://taste-trails-new-city.lovable.app
 
-## Problem
-Moving cities (say, Cotonou to Berlin) means losing your cultural map: the restaurants, nightlife, music and stories that felt like home. Generic "top 10" lists ignore taste.
+## 1. Problem
 
-## Solution
-Taste Bridge takes your home city, target city and up to 5 favorites (artists, movies, books or brands) and uses the [Qloo](https://qloo.com) cultural taste graph to find what **people who like those things tend to enjoy** in the target city. Results are grouped places (food, nightlife, culture), recommended music, movies and books, and a week-by-week plan for your first 30 days.
+Moving to a new city (say, Cotonou to Berlin) means losing your cultural map: the places, music and stories that felt like home. Generic "top 10" lists ignore taste, and an AI chatbot alone happily invents venues.
 
-A **With Qloo / AI alone** toggle shows what a plain AI answer gives without Qloo data, so the difference is visible.
+I built this because I am preparing to move abroad for vocational training in Germany, and I wanted a way to find "my kind of places" before I arrive.
 
-## How the agent works
-1. **Resolve favorites**: `GET /search` per favorite (parallel) to get Qloo entity IDs.
-2. **Read taste tags**: `GET /v2/insights` with `filter.type=urn:tag` and `signal.interests.entities`.
-3. **Find places**: three parallel `/v2/insights` calls with `filter.type=urn:entity:place`, `filter.tags` (food / nightlife / culture) and `filter.location.query=<target city>`.
-4. **Find media**: three parallel `/v2/insights` calls for artists, movies and books, weighted to the target city with `signal.location.query`, then filtered by the taste tags from step 2.
-5. **Write the plan**: the built-in Lovable AI writes a 4-week plan using **only** the returned data.
+## 2. Qloo workflow and why it fits
 
-Each step and every Qloo call (endpoint, parameters without the key, result count, duration, cache hit) is shown live in the Agent trace panel.
+Qloo's cultural taste graph answers a question a plain LLM cannot: **what do people who share these tastes actually go to?** Taste Bridge uses two Qloo endpoints (hackathon API, key kept server-side):
 
-### Quality and safeguards
-- **Verified favorites**: a favorite is used only if the name Qloo returns matches what you typed. Otherwise the trace says "Did you mean ...?" and the favorite is not used (for example, a typo never silently becomes a different artist).
-- **City filter**: places are kept only if their address names the target city (accent- and case-insensitive). For Berlin and Paris, postal codes are also checked, which rejects suburbs such as Potsdam or Bagnolet. Other cities are matched by name.
-- **No lodging**: hotels, hostels, resorts and convention centers are excluded from every list, with the reason logged.
-- **Clean tags**: only genre, cuisine, ambience and audience tags are shown (2 per card). Keywords, menu items, amenities and sensitive terms are dropped.
-- **Honest relevance**: places below a Qloo affinity threshold are dropped; media that share no taste tag with your profile are dropped, and an honest empty message is shown instead.
-- **Match badges**: "Strong" needs a high Qloo affinity score and a place in the upper half of its list (or 2+ shared tags when no score exists). Never a made-up percentage.
-- **Distinct explanations**: every card gets its own tag-based sentence; the group-tendency disclaimer appears once in the footer.
-- **Verified plan**: every venue, artist or title named in the 30-day plan is checked against the Qloo results; unverified mentions are removed and the plan is regenerated once if needed.
-- **Visible warnings**: a step that returns 0 results shows a warning in the trace, never "Done".
-- **Dynamic resolution**: "X of Y resolved" is computed and names any missing favorite.
+| Step | Qloo call | Why |
+|---|---|---|
+| Resolve favorites | `GET /search` (one per favorite) | Turn "Burna Boy" into a Qloo entity ID |
+| Read taste tags | `GET /v2/insights` with `filter.type=urn:tag` | Understand what the favorites have in common (the explanation layer) |
+| Places | `GET /v2/insights` with `filter.type=urn:entity:place`, `filter.tags` (food, nightlife, culture), `filter.location.query=<target city>` | Find places in the target city that share the audience |
+| Music, movies, books | `GET /v2/insights` with `filter.type=urn:entity:artist\|movie\|book`, `signal.location.query=<target city>` | Cross-domain recommendations |
 
-### Backend
-- All Qloo calls run on the server (TanStack Start server functions on Lovable Cloud). The `QLOO_API_KEY` secret never reaches the browser.
+Qloo results are used as **evidence** in the product flow: each card shows its own tag-based reason and a match badge. The 30-day plan is written by an AI model that may only name entities returned by Qloo.
 
-- Every Qloo response is cached in the database for 24 hours.
-- Retries are limited to 2, only for rate limits and server errors.
-- Errors are shown as clear messages; the page never goes blank.
-- Only city names and favorite titles are sent to Qloo. No personal data.
+## 3. Request-to-result example (redacted)
 
-## Accessibility
-- Light and dark themes following the system preference; WCAG AA contrast tokens.
-- Status is shown with icons and text, never color alone.
-- `aria-live` region announces agent trace progress; labelled controls and tabs.
-- Visible keyboard focus, 44px touch targets, text at least 12px.
-- Respects `prefers-reduced-motion`; full-screen mobile layout.
+Input: home city `Cotonou`, target city `Berlin`, favorites `Burna Boy, Angélique Kidjo, Black Panther, Nike, Americanah` (all 5 resolved).
 
-## Limits
-- Qloo results describe group tendencies, not personal predictions.
-- Qloo coverage varies by city and category; some groups may be empty.
-- The hackathon API has a quota; when reached, the app shows a message and cached results still work.
-- The "AI alone" answer may contain invented or outdated places — that is the point of the comparison.
-
-## Development
-```sh
-npm i
-npm run dev
+```
+GET /search query=Burna Boy · take=1                         -> 1 entity
+GET /v2/insights filter.type=urn:tag
+    filter.tag.types=urn:tag:genre:media,urn:tag:genre:place
+    signal.interests.entities=<5 entity ids> · take=25       -> 25 tags
+GET /v2/insights filter.type=urn:entity:place
+    filter.tags=urn:tag:genre:place:restaurant,...cafe
+    filter.location.query=Berlin
+    signal.interests.entities=<5 entity ids> · take=15       -> 15 places, 4 kept
 ```
 
-Built with TanStack Start, React, Tailwind CSS and Lovable Cloud. Developed with the help of AI tools (Lovable, Claude), as allowed by the hackathon rules.
+Entity and tag choices: only genre, cuisine, ambience and audience tags are kept. Venue categories and formats ("Restaurant", "Audiobook", "Park") are removed from the taste profile because they say what something is, not what someone likes. The live **Agent trace** panel shows every call (endpoint, parameters without the key, result count, duration, cache hit).
 
-## License
-MIT — see [LICENSE](./LICENSE).
+## 4. Demo
+
+Open the live demo and press **Try the demo**. The **With Qloo / AI alone** tab shows the same favorites answered without Qloo data.
+
+## 5. Setup from a clean environment
+
+Requirements: Node 22+ (or bun), a Supabase project (the app uses one table as a 24h cache), a Qloo **hackathon** API key, and a Lovable AI key (for the plan text).
+
+```sh
+git clone <this repo>
+cd taste-trails-new-city
+npm install
+```
+
+1. Create the cache table by running `drizzle/migrations/0000_qloo_cache.sql` in your Supabase SQL editor.
+2. Create a `.env.local` file with:
+   - `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (server only)
+   - `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`
+   - `QLOO_API_KEY` (hackathon key, server only, **never commit it**)
+   - `LOVABLE_API_KEY` (AI gateway for the plan text)
+3. `npm run dev`, then `npm test` for the unit tests.
+
+On Lovable Cloud, the same values are stored as project secrets.
+
+## 6. Known limitations (what the results do not establish)
+
+- Qloo returns **group tendencies**, not what a person will like. The UI says "people who like X tend to enjoy Y", never "you will love".
+- Coverage varies: some local artists (for example Beninese artists) are not in the data. In that case the app says it could not match the favorite instead of guessing a different one.
+- With few or very different favorites, some categories (often books) have weak signal; the app shows an honest empty message instead of unrelated titles.
+- The city filter checks the address; postal-code ranges are implemented for Berlin and Paris, other cities are matched by name only.
+- The plan text is written by an AI model: every named venue or title is verified against Qloo results, but general tips are not from Qloo and are labeled as such.
+- Demo quota: the hackathon API has a quota; responses are cached for 24 hours.
+
+## Responsible data handling
+
+- Only city names and favorite titles are sent to Qloo. No names, emails or device identifiers.
+- The Qloo key stays on the server (Lovable Cloud secrets). It is never in the browser, the repository or the video.
+- Retries are limited to 2 and only for rate limits and server errors.
+
+## Quality safeguards
+
+- **Verified favorites:** a favorite is used only if Qloo's returned name matches what you typed ("Did you mean ...?" otherwise).
+- **No lodging:** hotels, hostels, resorts and convention centers are excluded from all lists.
+- **Right category:** a restaurant tagged "art gallery" does not appear under Culture.
+- **Distinct explanations:** every card has its own tag-based sentence.
+- **Visible warnings:** a step returning 0 results shows a warning in the trace, never "Done".
+
+## Accessibility
+
+Light and dark themes (system preference), AA contrast, status shown with icons and text, an `aria-live` region for the agent trace, labelled controls and tabs, visible focus, 44 px touch targets, `prefers-reduced-motion` respected.
+
+## Tech
+
+TanStack Start, React, Tailwind CSS, Lovable Cloud. Built with AI-assisted tools (Lovable, Claude), as allowed by the hackathon. MIT license, see [LICENSE](./LICENSE).
