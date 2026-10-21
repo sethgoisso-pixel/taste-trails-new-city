@@ -29,6 +29,9 @@ import {
   getTasteTags,
   resolveFavorites,
   writePlan,
+    BookOpen,
+  Check,
+  ChevronDown,
 } from "@/lib/taste.functions";
 import {
   DEMO_PRESET,
@@ -114,6 +117,7 @@ function Index() {
   const [targetCity, setTargetCity] = useState("");
   const [favorites, setFavorites] = useState<string[]>([""]);
   const [steps, setSteps] = useState<TraceStep[]>([]);
+    const [traceOpen, setTraceOpen] = useState(true);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<Result | null>(null);
@@ -146,6 +150,9 @@ function Index() {
     setView("qloo");
     setAiAlone({ loading: false });
     setRunning(true);
+    setTraceOpen(true);
+    setSteps(STEP_DEFS.map((d) => ({ ...d, status: "pending", calls: [] })));
+    
     setSteps(STEP_DEFS.map((d) => ({ ...d, status: "pending", calls: [] })));
 
     const stop = (id: string, r: { error: string; calls: QlooCallLog[] }) => {
@@ -259,6 +266,8 @@ data: {
         update("plan", { status: "error", note: plan.error });
         setResult({ ...base, planError: plan.error });
       }
+            setTraceOpen(false);
+      setTimeout(() => resultRef.current?.focus(), 50);
       setTimeout(() => resultRef.current?.focus(), 50);
     } catch (e) {
       console.error(e);
@@ -371,7 +380,7 @@ data: {
           </form>
         </section>
 
-        <AgentTrace steps={steps} announce={announce} />
+                <AgentTrace steps={steps} announce={announce} open={traceOpen} onToggle={() => setTraceOpen((v) => !v)} />
       </div>
 
       {result && (
@@ -454,60 +463,94 @@ function StatusIcon({ s }: { s: StepStatus }) {
   return <Circle className="size-4 text-muted-foreground" aria-hidden />;
 }
 
-function AgentTrace({ steps, announce }: { steps: TraceStep[]; announce: string }) {
+function AgentTrace({
+  steps,
+  announce,
+  open,
+  onToggle,
+}: {
+  steps: TraceStep[];
+  announce: string;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const allFinished = steps.length > 0 && steps.every((s) => s.status === "done" || s.status === "warning" || s.status === "error");
+
   return (
-    <section aria-labelledby="trace" className="rounded-2xl border border-border bg-card p-5 shadow-sm sm:p-6">
-      <h2 id="trace" className="mb-4 flex items-center gap-2 text-lg font-semibold">
-        <StepBadge n={2} /> Agent trace
-      </h2>
+    <section aria-labelledby="trace-heading" className="rounded-2xl border border-border bg-card p-4 shadow-sm sm:p-6">
+      <div className="flex items-center justify-between">
+        <h2 id="trace-heading" className="flex items-center gap-2 text-lg font-semibold">
+          <StepBadge n={2} /> Agent trace
+          {allFinished && !open && (
+            <span className="text-xs font-normal text-muted-foreground">
+              ({steps.length} steps completed)
+            </span>
+          )}
+        </h2>
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={open}
+          aria-controls="trace-content"
+          aria-label={open ? "Collapse agent trace" : "Expand agent trace"}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 py-1 text-xs font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <span>{open ? "Hide trace" : "Show trace"}</span>
+          <ChevronDown className={`size-3.5 transition-transform duration-200 ${open ? "rotate-180" : ""}`} aria-hidden />
+        </button>
+      </div>
       <div aria-live="polite" aria-atomic="true" className="sr-only">
         {announce}
       </div>
-      {steps.length === 0 ? (
-        <p className="text-sm text-muted-foreground">Each step and every Qloo call will appear here as the agent works.</p>
-      ) : (
-        <ol className="flex flex-col gap-3">
-          {steps.map((s) => (
-            <li key={s.id} className="rounded-xl border border-border bg-background p-3">
-              <div className="flex items-center justify-between gap-2">
-                <span className="flex items-center gap-2 text-sm font-medium">
-                  <StatusIcon s={s.status} /> {s.label}
-                </span>
-                <span
-                  className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                    s.status === "done"
-? "bg-mint text-mint-foreground"
-: s.status === "warning"
-? "bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200"
-: s.status === "error"
-? "bg-destructive/10 text-destructive"
-                        : "bg-muted text-muted-foreground"
-                  }`}
-                >
-                  {STATUS_TEXT[s.status]}
-                </span>
-              </div>
-              {s.note && <p className="mt-1 text-xs text-muted-foreground">{s.note}</p>}
-              {s.calls.length > 0 && (
-                <ul className="mt-2 flex flex-col gap-1">
-                  {s.calls.map((c, i) => (
-                    <li key={i} className="overflow-x-auto rounded-md bg-muted px-2 py-1.5 font-mono text-xs text-foreground">
-                      <span className="font-semibold">GET {c.endpoint}</span>{" "}
-                      <span className="text-muted-foreground">
-                        {Object.entries(c.params)
-                          .map(([k, v]) => `${k}=${v.length > 60 ? `${v.slice(0, 57)}…` : v}`)
-                          .join(" · ")}
-                      </span>
-                      <span className="block">
-                        {c.error ? `✕ ${c.error}` : `${c.resultCount} results`} · {c.durationMs} ms{c.cached ? " · from cache" : ""}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </li>
-          ))}
-        </ol>
+      {open && (
+        <div id="trace-content" className="mt-4">
+          {steps.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Each step and every Qloo call will appear here as the agent works.</p>
+          ) : (
+            <ol className="flex flex-col gap-3">
+              {steps.map((s) => (
+                <li key={s.id} className="rounded-xl border border-border bg-background p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="flex items-center gap-2 text-sm font-medium">
+                      <StatusIcon s={s.status} /> {s.label}
+                    </span>
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                        s.status === "done"
+                          ? "bg-mint text-mint-foreground"
+                          : s.status === "warning"
+                          ? "bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200"
+                          : s.status === "error"
+                          ? "bg-destructive/10 text-destructive"
+                          : "bg-muted text-muted-foreground"
+                      }`}
+                    >
+                      {STATUS_TEXT[s.status]}
+                    </span>
+                  </div>
+                  {s.note && <p className="mt-1 text-xs text-muted-foreground">{s.note}</p>}
+                  {s.calls.length > 0 && (
+                    <ul className="mt-2 flex flex-col gap-1">
+                      {s.calls.map((c, i) => (
+                        <li key={i} className="overflow-x-auto rounded-md bg-muted px-2 py-1.5 font-mono text-xs text-foreground">
+                          <span className="font-semibold">GET {c.endpoint}</span>{" "}
+                          <span className="text-muted-foreground">
+                            {Object.entries(c.params)
+                              .map(([k, v]) => `${k}=${v.length > 60 ? `${v.slice(0, 57)}…` : v}`)
+                              .join(" · ")}
+                          </span>
+                          <span className="block">
+                            {c.error ? `✕ ${c.error}` : `${c.resultCount} results`} · {c.durationMs} ms{c.cached ? " · from cache" : ""}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </li>
+              ))}
+            </ol>
+          )}
+        </div>
       )}
     </section>
   );
