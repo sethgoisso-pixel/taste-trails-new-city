@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   buildExplanations,
   cacheKey,
+  categoryReason,
+  isGenericTag,
   filterTags,
   formatResolutionNote,
   getMatchBadge,
@@ -9,7 +11,9 @@ import {
   isPlaceInCity,
   isRetryable,
   isTrustedMatch,
+  categoryMismatchReason,
   lodgingReason,
+  meaningfulTasteTags,
   MAX_RETRIES,
   MIN_FAVORITES,
   normalizeFavorites,
@@ -198,5 +202,71 @@ describe("resolution note", () => {
   it("is computed, not hard-coded", () => {
     expect(formatResolutionNote(["Burna Boy", "Nike"], ["Burna Boy", "Nike"])).toBe("2 of 2 resolved");
     expect(formatResolutionNote(["Burna Boy"], ["Burna Boy", "UnknownBand"])).toBe("1 of 2 resolved (missing: UnknownBand)");
+  });
+});
+
+describe("generic tags are not tastes", () => {
+  it("recognizes venue and format tags", () => {
+    for (const t of ["Restaurant", "Bar", "Ski resort", "Audiobook", "Fiction"]) expect(isGenericTag(t)).toBe(true);
+    expect(isGenericTag("African")).toBe(false);
+  });
+  it("never counts them as shared taste", () => {
+    expect(sharedTags(["Restaurant", "African"], ["Restaurant", "African", "Ski resort"])).toEqual(["African"]);
+    expect(sharedTags(["Audiobook"], ["Audiobook"])).toEqual([]);
+  });
+  it("never explains a card with 'taste for Restaurant'", () => {
+    const out = buildExplanations(
+      [{ id: "1", name: "A", tags: ["Restaurant", "Contemporary"], group: "Food" }],
+      ["Restaurant", "African"],
+    );
+    expect(Object.values(out)[0]?.includes("taste for Restaurant")).toBe(false);
+  });
+});
+
+describe("place category check", () => {
+  it("keeps places whose primary genre fits", () => {
+    expect(categoryReason("food", "urn:tag:genre:place:restaurant")).toBeNull();
+    expect(categoryReason("nightlife", "urn:tag:genre:place:wine_bar")).toBeNull();
+    expect(categoryReason("culture", "urn:tag:genre:place:museum")).toBeNull();
+    expect(categoryReason("culture", "urn:tag:genre:place:art_gallery")).toBeNull();
+  });
+  it("rejects a restaurant listed as culture", () => {
+    expect(categoryReason("culture", "urn:tag:genre:place:restaurant")).not.toBeNull();
+  });
+  it("cannot judge without a primary genre", () => {
+    expect(categoryReason("culture", undefined)).toBeNull();
+  });
+});
+
+describe("generic tags are not taste", () => {
+  it("drops place categories and formats from the taste profile", () => {
+    expect(meaningfulTasteTags(["Restaurant", "Bar", "African", "Fiction", "Caribbean", "Ski resort", "Audiobook", "Contemporary R&B"])).toEqual([
+      "African",
+      "Caribbean",
+      "Contemporary R&B",
+    ]);
+  });
+  it("an Obama memoir no longer matches an Afrobeats profile through 'Audiobook'", () => {
+    const taste = meaningfulTasteTags(["Audiobook", "Fiction", "African", "Contemporary R&B"]);
+    expect(sharedTags(["Audiobook", "Nonfiction", "Politics"], taste)).toEqual([]);
+  });
+});
+
+describe("place category matches the primary genre", () => {
+  it("rejects a restaurant listed under Culture or Nightlife", () => {
+    expect(categoryMismatchReason("culture", "urn:tag:genre:place:restaurant")).not.toBeNull();
+    expect(categoryMismatchReason("nightlife", "urn:tag:genre:place:restaurant")).not.toBeNull();
+    expect(categoryMismatchReason("nightlife", "urn:tag:genre:place:japanese_restaurant")).not.toBeNull();
+  });
+  it("accepts real museums, galleries, bars and clubs", () => {
+    expect(categoryMismatchReason("culture", "urn:tag:genre:place:art_museum")).toBeNull();
+    expect(categoryMismatchReason("culture", "urn:tag:genre:place:art_gallery")).toBeNull();
+    expect(categoryMismatchReason("nightlife", "urn:tag:genre:place:cocktail_bar")).toBeNull();
+    expect(categoryMismatchReason("nightlife", "urn:tag:genre:place:nightclub")).toBeNull();
+  });
+  it("does not judge unknown formats, missing genres or the food category", () => {
+    expect(categoryMismatchReason("culture", "something-else")).toBeNull();
+    expect(categoryMismatchReason("culture", undefined)).toBeNull();
+    expect(categoryMismatchReason("food", "urn:tag:genre:place:bar")).toBeNull();
   });
 });
