@@ -270,3 +270,9 @@ describe("place category matches the primary genre", () => {
     expect(categoryMismatchReason("food", "urn:tag:genre:place:bar")).toBeNull();
   });
 });
+
+describe("more generic tags seen in real runs", () => {
+  it("drops 'Resort hotel', 'Park', 'Shopping mall' and 'Roman'", () => {
+    expect(meaningfulTasteTags(["African", "Caribbean", "Resort hotel", "Roman", "Park", "Shopping mall"])).toEqual(["African", "Caribbean"]);
+  });
+});
