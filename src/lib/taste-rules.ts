@@ -186,7 +186,7 @@ const CITY_POSTAL: Record<string, (code: number, raw: string) => boolean> = {
 
 export function isPlaceInCity(
   targetCity: string,
-  place: { address?: string | null; locality?: string | null; localities?: string[] | null; postalCode?: string | null },
+  place: { address?: string | null | undefined; locality?: string | null | undefined; localities?: string[] | null | undefined; postalCode?: string | null | undefined },
 ): boolean {
   return placeCityReason(targetCity, place) === null;
 }
@@ -194,7 +194,7 @@ export function isPlaceInCity(
 /** null when the place is inside the target city, otherwise the exclusion reason. */
 export function placeCityReason(
   targetCity: string,
-  place: { address?: string | null; locality?: string | null; localities?: string[] | null; postalCode?: string | null },
+  place: { address?: string | null | undefined; locality?: string | null | undefined; localities?: string[] | null | undefined; postalCode?: string | null | undefined },
 ): string | null {
   const target = normalizeCityString(targetCity);
   if (!target) return "no target city";

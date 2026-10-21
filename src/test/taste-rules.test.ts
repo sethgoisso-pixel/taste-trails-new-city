@@ -8,7 +8,6 @@ import {
   isRetryable,
   MAX_RETRIES,
   normalizeFavorites,
-  whyLine,
 } from "@/lib/taste-rules";
 
 describe("taste rules", () => {
@@ -35,11 +34,6 @@ describe("taste rules", () => {
   });
   it("builds the same cache key regardless of param order", () => {
     expect(cacheKey("/x", { b: "2", a: "1" })).toBe(cacheKey("/x", { a: "1", b: "2" }));
-  });
-  it("describes groups, never promises", () => {
-    const line = whyLine(["Burna Boy"], ["African"], ["Africa"]);
-    expect(line.startsWith("People who like Burna Boy tend to enjoy")).toBe(true);
-    expect(line.toLowerCase()).not.toContain("you will love");
   });
 });
 

@@ -37,7 +37,9 @@ import {
   getMatchBadge,
   normalizeFavorites,
   sharedTags,
-  whyLine,
+  buildExplanations,
+  MIN_FAVORITES,
+  MIN_FAVORITES_MESSAGE,
 } from "@/lib/taste-rules";
 import type { MediaKind, PlaceCategory, PlanWeek, QlooCallLog, RecItem, StepResult } from "@/lib/taste-types";
 const TITLE = "Taste Bridge — carry your taste to a new city";
@@ -135,8 +137,8 @@ function Index() {
 
   async function run(home: string, target: string, favs: string[]) {
     const cleaned = normalizeFavorites(favs);
-    if (home.trim().length < 2 || target.trim().length < 2 || !cleaned.length) {
-      setError("Please enter both cities and at least one favorite.");
+    if (home.trim().length < 2 || target.trim().length < 2 || cleaned.length < MIN_FAVORITES) {
+      setError(home.trim().length < 2 || target.trim().length < 2 ? "Please enter both cities." : MIN_FAVORITES_MESSAGE);
       return;
     }
     setError(null);
@@ -156,17 +158,22 @@ function Index() {
       update("resolve", { status: "running" });
             const res = await resolveFn({ data: { favorites: cleaned } });
       if (!res.ok) return stop("resolve", res);
-      const note = formatResolutionNote(
-        res.value.map((v) => v.query),
-        cleaned,
-      );
+      const resolved = res.value.value;
+      const sugg = res.value.suggestions.map((x) => `Did you mean "${x.name}" for "${x.query}"? Not used; remove or rename it.`);
+      const note = [formatResolutionNote(resolved.map((v) => v.query), cleaned), ...sugg].join(" ");
+      if (resolved.length < MIN_FAVORITES) {
+        update("resolve", { status: "error", calls: res.calls, note });
+        setError(`${MIN_FAVORITES_MESSAGE} ${sugg.join(" ")}`.trim());
+        setRunning(false);
+        return;
+      }
       update("resolve", {
         status: "done",
         calls: res.calls,
         note,
       });
-      const ids = res.value.map((v) => v.id);
-      const names = res.value.map((v) => v.name);
+      const ids = resolved.map((v) => v.id);
+      const names = resolved.map((v) => v.name);
 
       update("tags", { status: "running" });
       update("places", { status: "running" });
