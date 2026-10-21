@@ -4,7 +4,9 @@ import { z } from "zod";
 import { aiErrorMessage, generatePlainText } from "./ai.server";
 import { qlooGet, QlooError } from "./qloo.server";
 import {
+  categoryReason,
   filterTags,
+  isGenericTag,
   isTrustedMatch,
   lodgingReason,
   MAX_FAVORITES,
@@ -125,7 +127,7 @@ export const getTasteTags = createServerFn({ method: "POST" })
       const { kept, dropped } = filterTags(raw);
       return {
         ok: true,
-        value: kept.map((t) => t.name),
+        value: kept.map((t) => t.name).filter((n) => !isGenericTag(n)),
         calls: [log],
         meta: { rawCount: raw.length, excluded: dropped.map((d) => ({ name: d.name, reason: d.reason })), keptTags: kept },
       };
@@ -155,6 +157,7 @@ export const getPlaces = createServerFn({ method: "POST" })
       const excluded: Exclusion[] = [];
       const kept: RecItem[] = [];
       const keptTags: RawTag[] = [];
+      const categoryRejects: { e: RawEntity; reason: string }[] = [];
       for (const e of raw) {
         const p = e.properties ?? {};
         const lodging = lodgingReason({
@@ -175,11 +178,27 @@ export const getPlaces = createServerFn({ method: "POST" })
         const reason =
           lodging ?? where ?? (typeof aff === "number" && aff < MIN_PLACE_AFFINITY ? `low affinity (${aff.toFixed(2)})` : null);
         if (reason) excluded.push({ name: e.name, reason });
-        else if (kept.length < 4) {
-          const t = toItem(e);
+        else {
+          // Qloo may tag a restaurant as "art gallery": keep only places whose PRIMARY genre fits the category.
+          const wrongKind = categoryReason(data.category, p.primary_genre?.id);
+          if (wrongKind) categoryRejects.push({ e, reason: wrongKind });
+          else if (kept.length < 4) {
+            const t = toItem(e);
+            kept.push(t.item);
+            keptTags.push(...t.keptTags);
+          }
+        }
+      }
+      if (kept.length === 0 && categoryRejects.length > 0) {
+        // If nothing fits, the genre ids probably do not follow our assumption: better the best candidates than an empty list.
+        console.log(`[places:${data.category}] category check skipped, nothing matched`);
+        for (const c of categoryRejects.slice(0, 4)) {
+          const t = toItem(c.e);
           kept.push(t.item);
           keptTags.push(...t.keptTags);
         }
+      } else {
+        for (const c of categoryRejects) excluded.push({ name: c.e.name, reason: c.reason });
       }
       if (excluded.length) console.log(`[places:${data.category}:${data.city}] excluded`, JSON.stringify(excluded));
       return { ok: true, value: kept, calls: [log], meta: { rawCount: raw.length, excluded, keptTags } };
