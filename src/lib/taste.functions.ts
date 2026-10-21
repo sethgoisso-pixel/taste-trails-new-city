@@ -44,7 +44,7 @@ interface RawEntity {
   name: string;
   types?: string[];
   query?: { affinity?: number };
-  tags?: { name?: string; type?: string; tag_id?: string; id?: string }[];
+tags?: { name?: string; type?: string; subtype?: string; tag_id?: string; id?: string }[];
   properties?: {
     image?: { url?: string };
     images?: { url?: string }[];
@@ -64,7 +64,7 @@ interface RawEntity {
 function toItem(e: RawEntity): { item: RecItem; keptTags: RawTag[] } {
   const p = e.properties ?? {};
   const year = p.release_year ?? p.publication_year;
-  const raw: RawTag[] = (e.tags ?? []).map((t) => ({ name: t.name ?? "", type: t.type ?? "" }));
+const raw: RawTag[] = (e.tags ?? []).map((t) => ({ name: t.name ?? "", type: t.type ?? t.subtype ?? "" }));
   const { kept } = filterTags(raw);
   const affinity = e.query?.affinity;
   return {
@@ -208,7 +208,8 @@ export const getMedia = createServerFn({ method: "POST" })
       for (const e of raw) {
         const t = toItem(e);
         // Low signal: an item sharing no genre with the taste profile is off-topic (e.g. political memoirs for Afrobeats).
-        if (sharedTags(t.item.tags, data.tasteTags).length === 0) excluded.push({ name: e.name, reason: "no shared taste tag" });
+// If Qloo returned no taste tags at all, relevance cannot be judged, so the filter is skipped.
+if (data.tasteTags.length > 0 && sharedTags(t.item.tags, data.tasteTags).length === 0) excluded.push({ name: e.name, reason: "no shared taste tag" });
         else if (kept.length < 4) {
           kept.push(t.item);
           keptTags.push(...t.keptTags);
